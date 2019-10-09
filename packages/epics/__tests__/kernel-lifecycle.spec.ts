@@ -1,8 +1,8 @@
-import * as Immutable from "immutable";
-import { ActionsObservable } from "redux-observable";
 import { actions as actionsModule, state as stateModule } from "@nteract/core";
 import { createMessage, JupyterMessage, MessageType } from "@nteract/messaging";
-import { Subject, of } from "rxjs";
+import * as Immutable from "immutable";
+import { ActionsObservable } from "redux-observable";
+import { of, Subject } from "rxjs";
 import { toArray } from "rxjs/operators";
 import { TestScheduler } from "rxjs/testing";
 
@@ -16,7 +16,7 @@ const buildScheduler = () =>
   new TestScheduler((actual, expected) => expect(actual).toEqual(expected));
 
 describe("acquireKernelInfo", () => {
-  test("sends a kernel_info_request and processes kernel_info_reply", async function(done) {
+  test("sends a kernel_info_request and processes kernel_info_reply", async done => {
     const sent = new Subject();
     const received = new Subject();
 
@@ -200,6 +200,13 @@ describe("restartKernelEpic", () => {
                 status: "not connected"
               })
             })
+          }),
+          contents: stateModule.makeContentsRecord({
+              byRef: Immutable.Map({
+                  contentRef: stateModule.makeNotebookContentRecord({
+                      model: stateModule.makeDocumentRecord({ kernelRef: "oldKernelRef" })
+                  })
+              })
           })
         })
       }),
@@ -216,12 +223,12 @@ describe("restartKernelEpic", () => {
         a: actionsModule.restartKernel({
           outputHandling: "None",
           kernelRef: "oldKernelRef",
-          contentRef: contentRef
+          contentRef
         }),
         b: actionsModule.launchKernelSuccessful({
           kernel: "",
           kernelRef: newKernelRef,
-          contentRef: contentRef,
+          contentRef,
           selectNextKernel: true
         })
       };
@@ -236,11 +243,11 @@ describe("restartKernelEpic", () => {
           cwd: ".",
           kernelRef: newKernelRef,
           selectNextKernel: true,
-          contentRef: contentRef
+          contentRef
         }),
         e: actionsModule.restartKernelSuccessful({
           kernelRef: newKernelRef,
-          contentRef: contentRef
+          contentRef
         })
       };
 
@@ -270,6 +277,13 @@ describe("restartKernelEpic", () => {
                 status: "not connected"
               })
             })
+          }),
+                    contents: stateModule.makeContentsRecord({
+              byRef: Immutable.Map({
+                  contentRef: stateModule.makeNotebookContentRecord({
+                      model: stateModule.makeDocumentRecord({ kernelRef: "oldKernelRef" })
+                  })
+              })
           })
         })
       }),
@@ -286,7 +300,8 @@ describe("restartKernelEpic", () => {
       const inputActions = {
         a: actionsModule.restartKernel({
           outputHandling: "Run All",
-          kernelRef: "oldKernelRef"
+          kernelRef: "oldKernelRef",
+          contentRef: "contentRef"
         }),
         b: actionsModule.launchKernelSuccessful({
           kernel: "",
@@ -304,12 +319,14 @@ describe("restartKernelEpic", () => {
           kernelSpecName: null,
           cwd: ".",
           kernelRef: newKernelRef,
-          selectNextKernel: true
+          selectNextKernel: true,
+          contentRef: "contentRef"
         }),
         e: actionsModule.restartKernelSuccessful({
-          kernelRef: newKernelRef
+          kernelRef: newKernelRef,
+          contentRef: "contentRef"
         }),
-        f: actionsModule.executeAllCells({})
+        f: actionsModule.executeAllCells({ contentRef: "contentRef"})
       };
 
       const inputMarbles = "a---b---|";

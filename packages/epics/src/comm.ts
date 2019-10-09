@@ -1,15 +1,16 @@
-/**
- * @module epics
- */
-import { merge } from "rxjs";
-import { map, retry, switchMap } from "rxjs/operators";
-import { ofType } from "redux-observable";
 import { createMessage, ofMessageType } from "@nteract/messaging";
+import { ofType } from "redux-observable";
 import { ActionsObservable } from "redux-observable";
+import { merge } from "rxjs";
+import { map, retry, switchMap, takeUntil } from "rxjs/operators";
 
-import { commOpenAction, commMessageAction } from "@nteract/actions";
-import { NewKernelAction } from "@nteract/actions";
-import { LAUNCH_KERNEL_SUCCESSFUL } from "@nteract/actions";
+import {
+  commMessageAction,
+  commOpenAction,
+  KILL_KERNEL_SUCCESSFUL,
+  LAUNCH_KERNEL_SUCCESSFUL,
+  NewKernelAction
+} from "@nteract/actions";
 
 /**
  * creates a comm open message
@@ -68,28 +69,6 @@ export function createCommCloseMessage(
 }
 
 /**
- * creates all comm related actions given a new kernel action
- * @param  {Object} launchKernelAction a LAUNCH_KERNEL_SUCCESSFUL action
- * @return {ActionsObservable}          all actions resulting from comm messages on this kernel
- */
-export function commActionObservable(action: NewKernelAction) {
-  const {
-    payload: { kernel }
-  } = action;
-  const commOpenAction$ = kernel.channels.pipe(
-    ofMessageType("comm_open"),
-    map(commOpenAction)
-  );
-
-  const commMessageAction$ = kernel.channels.pipe(
-    ofMessageType("comm_msg"),
-    map(commMessageAction)
-  );
-
-  return merge(commOpenAction$, commMessageAction$).pipe(retry());
-}
-
-/**
  * An epic that emits comm actions from the backend kernel
  * @param  {ActionsObservable} action$ Action Observable from redux-observable
  * @param  {redux.Store} store   the redux store
@@ -99,5 +78,23 @@ export const commListenEpic = (action$: ActionsObservable<NewKernelAction>) =>
   action$.pipe(
     // A LAUNCH_KERNEL_SUCCESSFUL action indicates we have a new channel
     ofType(LAUNCH_KERNEL_SUCCESSFUL),
-    switchMap(commActionObservable)
+    switchMap((action: NewKernelAction) => {
+      const {
+        payload: { kernel }
+      } = action;
+      // Listen on the comms channel until KILL_KERNEL_SUCCESSFUL is emitted
+      const commOpenAction$ = kernel.channels.pipe(
+        ofMessageType("comm_open"),
+        map(commOpenAction),
+        takeUntil(action$.pipe(ofType(KILL_KERNEL_SUCCESSFUL)))
+      );
+
+      const commMessageAction$ = kernel.channels.pipe(
+        ofMessageType("comm_msg"),
+        map(commMessageAction),
+        takeUntil(action$.pipe(ofType(KILL_KERNEL_SUCCESSFUL)))
+      );
+
+      return merge(commOpenAction$, commMessageAction$);
+    })
   );

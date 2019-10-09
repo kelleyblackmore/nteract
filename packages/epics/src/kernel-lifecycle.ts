@@ -1,27 +1,30 @@
-/**
- * @module epics
- */
-import { Observable, Observer, of, empty, merge } from "rxjs";
-import { createMessage, childOf, ofMessageType } from "@nteract/messaging";
-import { Channels, JupyterMessage } from "@nteract/messaging";
 import { ImmutableNotebook } from "@nteract/commutable";
 import {
+  Channels,
+  childOf,
+  createMessage,
+  JupyterMessage,
+  ofMessageType
+} from "@nteract/messaging";
+import { ActionsObservable, ofType } from "redux-observable";
+import { empty, merge, Observable, Observer, of } from "rxjs";
+import {
+  catchError,
+  concatMap,
   filter,
+  first,
   map,
   mergeMap,
-  concatMap,
-  catchError,
-  first,
   switchMap,
   take,
+  takeUntil,
   timeout
 } from "rxjs/operators";
-import { ActionsObservable, ofType } from "redux-observable";
 
+import * as actions from "@nteract/actions";
+import * as selectors from "@nteract/selectors";
 import { ContentRef, KernelRef } from "@nteract/types";
 import { createKernelRef } from "@nteract/types";
-import * as selectors from "@nteract/selectors";
-import * as actions from "@nteract/actions";
 import { AppState, KernelInfo } from "@nteract/types";
 
 const path = require("path");
@@ -44,7 +47,8 @@ export const watchExecutionStateEpic = (
             kernelStatus: msg.content.execution_state,
             kernelRef: action.payload.kernelRef
           })
-        )
+        ),
+        takeUntil(action$.pipe(ofType(actions.KILL_KERNEL_SUCCESSFUL)))
       )
     )
   );
@@ -85,18 +89,33 @@ export function acquireKernelInfo(
         nbconvertExporter: l.nbconvert_exporter
       };
 
-      return of(
-        // The original action we were using
-        actions.setLanguageInfo({
-          langInfo: msg.content.language_info,
-          kernelRef,
-          contentRef
-        }),
-        actions.setKernelInfo({
-          kernelRef,
-          info
-        })
-      );
+      let result;
+      if (!c.protocol_version.startsWith("5")) {
+        result = [
+          actions.launchKernelFailed({
+            kernelRef,
+            contentRef,
+            error: new Error(
+              "The kernel that you are attempting to launch does not support the latest version (v5) of the messaging protocol."
+            )
+          })
+        ];
+      } else {
+        result = [
+          // The original action we were using
+          actions.setLanguageInfo({
+            langInfo: msg.content.language_info,
+            kernelRef,
+            contentRef
+          }),
+          actions.setKernelInfo({
+            kernelRef,
+            info
+          })
+        ];
+      }
+
+      return of(...result);
     })
   );
 
@@ -201,15 +220,26 @@ export const restartKernelEpic = (
     ofType(actions.RESTART_KERNEL),
     concatMap((action: actions.RestartKernel | actions.NewKernelAction) => {
       const state = state$.value;
+      const oldKernelRef = selectors.kernelRefByContentRef(state$.value, { contentRef: action.payload.contentRef });
+      const notificationSystem = selectors.notificationSystem(state);
 
-      const oldKernelRef = action.payload.kernelRef;
+      if (!oldKernelRef) {
+        notificationSystem.addNotification({
+          title: "Failure to Restart",
+          message: "Unable to restart kernel, please select a new kernel.",
+          dismissible: true,
+          position: "tr",
+          level: "error"
+        });
+        return empty();
+      }
+
       const oldKernel = selectors.kernel(state, { kernelRef: oldKernelRef });
 
-      const notificationSystem = selectors.notificationSystem(state);
       if (!oldKernelRef || !oldKernel) {
         notificationSystem.addNotification({
           title: "Failure to Restart",
-          message: `Unable to restart kernel, please select a new kernel.`,
+          message: "Unable to restart kernel, please select a new kernel.",
           dismissible: true,
           position: "tr",
           level: "error"
@@ -277,7 +307,7 @@ export const restartKernelEpic = (
         catchError(error => {
           return of(
             actions.restartKernelFailed({
-              error: error,
+              error,
               kernelRef: newKernelRef,
               contentRef: initiatingContentRef
             })

@@ -1,10 +1,11 @@
-import React from "react";
-import _ from "lodash";
 import { mount } from "enzyme";
+import _ from "lodash";
+import React from "react";
 
 import PlotlyTransform from "../src";
 
-const plotly = require("@nteract/plotly");
+jest.mock("plotly.js-dist")
+const plotly = require("plotly.js-dist");
 
 function deepFreeze(obj) {
   // Retrieve the property names defined on obj

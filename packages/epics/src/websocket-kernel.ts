@@ -1,27 +1,25 @@
-/**
- * @module epics
- */
+import { kernelInfoRequest } from "@nteract/messaging";
 import { ofType } from "redux-observable";
 import { ActionsObservable, StateObservable } from "redux-observable";
+import { kernels, sessions } from "rx-jupyter";
+import { empty, of } from "rxjs";
 import {
   catchError,
+  concatMap,
+  filter,
   map,
   mergeMap,
-  switchMap,
-  concatMap,
-  filter
+  switchMap
 } from "rxjs/operators";
-import { of, empty } from "rxjs";
-import { kernels, sessions, ServerConfig } from "rx-jupyter";
-import { kernelInfoRequest } from "@nteract/messaging";
 
 import * as actions from "@nteract/actions";
 import * as selectors from "@nteract/selectors";
 import { castToSessionId } from "@nteract/types";
 import { createKernelRef } from "@nteract/types";
 import { AppState } from "@nteract/types";
-import { RemoteKernelProps } from "@nteract/types";
+import { KernelRecord, RemoteKernelProps, ServerConfig } from "@nteract/types";
 
+import { AjaxResponse } from "rxjs/ajax";
 import { extractNewKernel } from "./kernel-lifecycle";
 
 export const launchWebSocketKernelEpic = (
@@ -75,7 +73,7 @@ export const launchWebSocketKernelEpic = (
           const kernel: RemoteKernelProps = Object.assign({}, session.kernel, {
             type: "websocket",
             info: null,
-            sessionId: sessionId,
+            sessionId,
             cwd,
             channels: kernels.connect(
               serverConfig,
@@ -220,7 +218,17 @@ export const interruptKernelEpic = (
       }
       const serverConfig: ServerConfig = selectors.serverConfig(host);
 
-      const kernel = selectors.currentKernel(state);
+      const { contentRef } = action.payload;
+
+      let kernel: KernelRecord | null | undefined;
+      if (contentRef) {
+        kernel = selectors.kernelByContentRef(state$.value, {
+          contentRef
+        });
+      } else {
+        kernel = selectors.currentKernel(state$.value);
+      }
+
       if (!kernel) {
         return of(
           actions.interruptKernelFailed({
@@ -230,10 +238,19 @@ export const interruptKernelEpic = (
         );
       }
 
-      if (kernel.type !== "websocket" || !kernel.id) {
+      if (kernel.type !== "websocket") {
         return of(
           actions.interruptKernelFailed({
             error: new Error("Invalid kernel type for interrupting"),
+            kernelRef: action.payload.kernelRef
+          })
+        );
+      }
+
+      if (!kernel.id) {
+          return of(
+          actions.interruptKernelFailed({
+            error: new Error("Kernel does not have ID set"),
             kernelRef: action.payload.kernelRef
           })
         );
@@ -259,7 +276,6 @@ export const interruptKernelEpic = (
     })
   );
 
-// NB: This epic kills the *current* kernel. ZMQ killKernelEpic kills a *specified* kernel.
 export const killKernelEpic = (
   action$: ActionsObservable<actions.KillKernelAction>,
   state$: StateObservable<AppState>
@@ -281,7 +297,17 @@ export const killKernelEpic = (
       }
       const serverConfig: ServerConfig = selectors.serverConfig(host);
 
-      const kernel = selectors.currentKernel(state);
+      const { contentRef, kernelRef } = action.payload;
+
+      let kernel: KernelRecord | null | undefined;
+      if (contentRef) {
+          kernel = selectors.kernelByContentRef(state, { contentRef });
+      } else if (kernelRef) {
+        kernel = selectors.kernel(state, { kernelRef });
+      } else {
+          kernel = selectors.currentKernel(state);
+      }
+
       if (!kernel) {
         return of(
           actions.killKernelFailed({
@@ -291,7 +317,18 @@ export const killKernelEpic = (
         );
       }
 
-      if (kernel.type !== "websocket" || !kernel.id || !kernel.sessionId) {
+      if (kernel.type !== "websocket") {
+        return of(
+          actions.killKernelFailed({
+            error: new Error(
+              "websocket kernel epic can only kill websocket kernels with an id"
+            ),
+            kernelRef: action.payload.kernelRef
+          })
+        );
+      }
+
+            if (!kernel.id || !kernel.sessionId) {
         return of(
           actions.killKernelFailed({
             error: new Error(
@@ -318,6 +355,113 @@ export const killKernelEpic = (
               kernelRef: action.payload.kernelRef
             })
           )
+        )
+      );
+    })
+  );
+
+export const restartWebSocketKernelEpic = (
+  action$: ActionsObservable<actions.RestartKernel>,
+  state$: StateObservable<AppState>
+) =>
+  action$.pipe(
+    ofType(actions.RESTART_KERNEL),
+    concatMap((action: actions.RestartKernel) => {
+      const state = state$.value;
+
+      const { contentRef, kernelRef, outputHandling } = action.payload;
+
+      if (!kernelRef) {
+        return of(
+          actions.restartKernelFailed({
+            error: new Error("Can't execute restart without kernel ref."),
+            kernelRef: "none provided",
+            contentRef
+          })
+        );
+      }
+
+      const host = selectors.currentHost(state);
+      if (host.type !== "jupyter") {
+        return of(
+          actions.restartKernelFailed({
+            error: new Error("Can't restart a kernel with no Jupyter host."),
+            kernelRef,
+            contentRef
+          })
+        );
+      }
+
+      const serverConfig: ServerConfig = selectors.serverConfig(host);
+
+      const kernel = selectors.kernel(state, { kernelRef });
+      if (!kernel) {
+        return of(
+          actions.restartKernelFailed({
+            error: new Error("Can't restart a kernel that does not exist."),
+            kernelRef,
+            contentRef
+          })
+        );
+      }
+
+      if (kernel.type !== "websocket" || !kernel.id) {
+        return of(
+          actions.restartKernelFailed({
+            error: new Error("Can only restart Websocket kernels via API."),
+            kernelRef,
+            contentRef
+          })
+        );
+      }
+
+      const id = kernel.id;
+
+      return kernels.restart(serverConfig, id).pipe(
+        mergeMap<
+          AjaxResponse,
+          | actions.RestartKernelFailed
+          | actions.RestartKernelSuccessful
+          | actions.ExecuteAllCells
+          | actions.ClearAllOutputs
+        >((response: AjaxResponse) => {
+          if (response.status !== 200) {
+            return of(
+              actions.restartKernelFailed({
+                error: new Error("Unsuccessful kernel restart."),
+                kernelRef,
+                contentRef
+              })
+            );
+          } else {
+            if (outputHandling === "Run All") {
+              return of(
+                actions.restartKernelSuccessful({
+                  kernelRef,
+                  contentRef
+                }),
+                actions.executeAllCells({ contentRef })
+              );
+            } else if (outputHandling === "Clear All") {
+              return of(
+                actions.restartKernelSuccessful({
+                  kernelRef,
+                  contentRef
+                }),
+                actions.clearAllOutputs({ contentRef })
+              );
+            } else {
+              return of(
+                actions.restartKernelSuccessful({
+                  kernelRef,
+                  contentRef
+                })
+              );
+            }
+          }
+        }),
+        catchError(error =>
+          of(actions.restartKernelFailed({ error, kernelRef, contentRef }))
         )
       );
     })

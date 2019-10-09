@@ -1,14 +1,12 @@
-/**
- * @module rx-jupyter
- */
-import { ajax } from "rxjs/ajax";
-import { webSocket } from "rxjs/webSocket";
 import { Subject, Subscriber } from "rxjs";
-import { retryWhen, tap, delay, share } from "rxjs/operators";
-import { createAJAXSettings, ServerConfig } from "./base";
+import { ajax } from "rxjs/ajax";
+import { delay, retryWhen, share, tap } from "rxjs/operators";
+import { webSocket } from "rxjs/webSocket";
 import urljoin from "url-join";
 import URLSearchParams from "url-search-params";
+import { createAJAXSettings } from "./base";
 
+import { ServerConfig } from "@nteract/types";
 import { JupyterMessage } from "@nteract/messaging";
 
 /**
@@ -19,7 +17,7 @@ import { JupyterMessage } from "@nteract/messaging";
  * @returns An Observable with the request response
  */
 export const list = (serverConfig: ServerConfig) =>
-  ajax(createAJAXSettings(serverConfig, "/api/kernels"));
+  ajax(createAJAXSettings(serverConfig, "/api/kernels", { cache: false }));
 
 /**
  * Creates an AjaxObservable for getting info about a kernel.
@@ -30,7 +28,11 @@ export const list = (serverConfig: ServerConfig) =>
  * @returns An Observable with the request response
  */
 export const get = (serverConfig: ServerConfig, id: string) =>
-  ajax(createAJAXSettings(serverConfig, `/api/kernels/${id}`));
+  ajax(
+    createAJAXSettings(serverConfig, `/api/kernels/${id}`, {
+      cache: false
+    })
+  );
 
 /**
  * Creates an AjaxObservable for starting a kernel.
@@ -69,7 +71,7 @@ export const kill = (serverConfig: ServerConfig, id: string) =>
  * Creates an AjaxObservable for interrupting a kernel.
  *
  * @param serverConfig The server configuration
- * @param id The id of the kernel to interupt
+ * @param id The id of the kernel to interrupt
  *
  * @returns An Observable with the request response
  */
@@ -98,11 +100,11 @@ export const restart = (serverConfig: ServerConfig, id: string) =>
 /**
  * Creates a Websocket URL that can be used to initialize a
  * connection with a kernel.
- * 
+ *
  * @param serverConfig The server configuration
  * @param kernelID The ID of the kernel to connect to
  * @param sessionID The ID of the session to connect as
- * 
+ *
  * @returns A string with the fully formed Websocket URL
  */
 export const formWebSocketURL = (
@@ -132,11 +134,11 @@ export const formWebSocketURL = (
 /**
  * Creates a connection to a kernel with the given kernelID scoped under
  * a particular sessionID.
- * 
+ *
  * @param serverConfig The server configuration
  * @param kernelID The ID of the kernel to connect to
  * @param sessionID The ID of the session to connect as
- * 
+ *
  * @returns A websocket Subject that can be subscribed to
  */
 export const connect = (
@@ -144,15 +146,16 @@ export const connect = (
   kernelID: string,
   sessionID?: string
 ): Subject<any> => {
-  const wsSubject = webSocket<JupyterMessage>(
-    formWebSocketURL(serverConfig, kernelID, sessionID)
-  );
+  const wsSubject = webSocket<JupyterMessage>({
+    url: formWebSocketURL(serverConfig, kernelID, sessionID),
+    protocol: serverConfig.wsProtocol
+  });
 
   wsSubject.pipe(
     retryWhen(error$ => {
       // Keep track of how many times we've already re-tried
       let counter = 0;
-      let maxRetries = 100;
+      const maxRetries = 100;
 
       return error$.pipe(
         tap(e => {
@@ -167,7 +170,7 @@ export const connect = (
             throw e;
           } else {
             // We'll retry at this point
-            console.log(`attempting to retry kernel connection after error`, e);
+            console.log("attempting to retry kernel connection after error", e);
           }
         }),
         delay(1000)

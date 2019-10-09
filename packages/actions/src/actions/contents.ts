@@ -1,23 +1,56 @@
-/**
- * @module actions
- */
+// Vendor modules
 import { ContentRef, KernelRef, KernelspecInfo } from "@nteract/types";
+import { contents } from "rx-jupyter";
 
+// Local modules
 import * as actionTypes from "../actionTypes";
 
-export const fetchContent = (payload: {
-  filepath: string;
-  params: Object;
-  kernelRef: KernelRef;
+export const toggleHeaderEditor = (payload: {
   contentRef: ContentRef;
-}): actionTypes.FetchContent => ({
+}): actionTypes.ToggleHeaderEditor => ({
+  type: actionTypes.TOGGLE_HEADER_EDITOR,
+  payload
+});
+
+export const changeContentName = (payload: {
+  filepath: string;
+  contentRef: ContentRef;
+  prevFilePath: string;
+}): actionTypes.ChangeContentName => ({
+  type: actionTypes.CHANGE_CONTENT_NAME,
+  payload
+});
+
+export const changeContentNameFulfilled = (payload: {
+  filepath: string;
+  contentRef: ContentRef;
+  prevFilePath: string;
+}): actionTypes.ChangeContentNameFulfilled => ({
+  type: actionTypes.CHANGE_CONTENT_NAME_FULFILLED,
+  payload
+});
+
+export const changeContentNameFailed = (payload: {
+  basepath: string;
+  filepath: string;
+  error: Error;
+  contentRef: ContentRef;
+  prevFilePath: string;
+}): actionTypes.ChangeContentNameFailed => ({
+  type: actionTypes.CHANGE_CONTENT_NAME_FAILED,
+  payload
+});
+
+export const fetchContent = (
+  payload: actionTypes.FetchContent["payload"]
+): actionTypes.FetchContent => ({
   type: actionTypes.FETCH_CONTENT,
   payload
 });
 
 export const fetchContentFulfilled = (payload: {
   filepath: string;
-  model: any;
+  model: contents.IContent;
   kernelRef: KernelRef;
   contentRef: ContentRef;
 }): actionTypes.FetchContentFulfilled => ({
@@ -111,8 +144,28 @@ export function saveFulfilled(payload: {
   };
 }
 
+export function saveAsFailed(
+  payload: actionTypes.SaveAsFailed["payload"]
+): actionTypes.SaveAsFailed {
+  return {
+    type: actionTypes.SAVE_AS_FAILED,
+    payload,
+    error: true
+  };
+}
+
+export function saveAsFulfilled(
+  payload: actionTypes.SaveAsFulfilled["payload"]
+): actionTypes.SaveAsFulfilled {
+  return {
+    type: actionTypes.SAVE_AS_FULFILLED,
+    payload
+  };
+}
+
 // TODO: New Notebook action should use a kernel spec type
 export function newNotebook(payload: {
+  filepath: string | null;
   kernelSpec: KernelspecInfo;
   cwd: string;
   kernelRef: KernelRef;
@@ -121,6 +174,7 @@ export function newNotebook(payload: {
   return {
     type: actionTypes.NEW_NOTEBOOK,
     payload: {
+      filepath: payload.filepath,
       kernelSpec: payload.kernelSpec,
       cwd: payload.cwd || process.cwd(), // Desktop should be passing in the cwd
       kernelRef: payload.kernelRef,

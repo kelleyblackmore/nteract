@@ -1,6 +1,3 @@
-/**
- * @module actions
- */
 import {
   ContentRef,
   KernelInfo,
@@ -9,8 +6,8 @@ import {
   RemoteKernelProps
 } from "@nteract/types";
 
-import * as actionTypes from "../actionTypes";
 import { ExecuteRequest } from "@nteract/messaging";
+import * as actionTypes from "../actionTypes";
 
 export function launchKernelFailed(payload: {
   error: Error;
@@ -51,7 +48,7 @@ export function launchKernel(payload: {
 
 export function changeKernelByName(payload: {
   kernelSpecName: any;
-  oldKernelRef?: KernelRef;
+  oldKernelRef?: KernelRef | null;
   contentRef: ContentRef;
 }): actionTypes.ChangeKernelByName {
   return {
@@ -93,10 +90,7 @@ export function kernelRawStderr(payload: {
   };
 }
 
-export function killKernel(payload: {
-  restarting: boolean;
-  kernelRef: KernelRef;
-}): actionTypes.KillKernelAction {
+export function killKernel(payload: actionTypes.KillKernelAction["payload"]): actionTypes.KillKernelAction {
   return {
     type: actionTypes.KILL_KERNEL,
     payload
@@ -105,7 +99,7 @@ export function killKernel(payload: {
 
 export function killKernelFailed(payload: {
   error: Error;
-  kernelRef: KernelRef;
+  kernelRef?: KernelRef | null;
 }): actionTypes.KillKernelFailed {
   return {
     type: actionTypes.KILL_KERNEL_FAILED,
@@ -115,7 +109,7 @@ export function killKernelFailed(payload: {
 }
 
 export function killKernelSuccessful(payload: {
-  kernelRef: KernelRef;
+  kernelRef?: KernelRef | null;
 }): actionTypes.KillKernelSuccessful {
   return {
     type: actionTypes.KILL_KERNEL_SUCCESSFUL,
@@ -123,9 +117,9 @@ export function killKernelSuccessful(payload: {
   };
 }
 
-export function interruptKernel(payload: {
-  kernelRef: KernelRef;
-}): actionTypes.InterruptKernel {
+export function interruptKernel(
+  payload: actionTypes.InterruptKernel["payload"]
+): actionTypes.InterruptKernel {
   return {
     type: actionTypes.INTERRUPT_KERNEL,
     payload
@@ -133,7 +127,7 @@ export function interruptKernel(payload: {
 }
 
 export function interruptKernelSuccessful(payload: {
-  kernelRef: KernelRef;
+  kernelRef?: KernelRef | null;
 }): actionTypes.InterruptKernelSuccessful {
   return {
     type: actionTypes.INTERRUPT_KERNEL_SUCCESSFUL,
@@ -143,7 +137,7 @@ export function interruptKernelSuccessful(payload: {
 
 export function interruptKernelFailed(payload: {
   error: Error;
-  kernelRef: KernelRef;
+  kernelRef?: KernelRef | null;
 }): actionTypes.InterruptKernelFailed {
   return {
     type: actionTypes.INTERRUPT_KERNEL_FAILED,
@@ -152,11 +146,7 @@ export function interruptKernelFailed(payload: {
   };
 }
 
-export function restartKernel(payload: {
-  outputHandling: actionTypes.RestartKernelOutputHandling;
-  kernelRef: KernelRef;
-  contentRef: ContentRef;
-}): actionTypes.RestartKernel {
+export function restartKernel(payload: actionTypes.RestartKernel["payload"]): actionTypes.RestartKernel {
   return {
     type: actionTypes.RESTART_KERNEL,
     payload
@@ -274,7 +264,7 @@ export function deleteConnectionFileSuccessful(payload: {
 }
 
 export function shutdownReplySucceeded(payload: {
-  text: string;
+  content: { restart: boolean };
   kernelRef: KernelRef;
 }): actionTypes.ShutdownReplySucceeded {
   return {

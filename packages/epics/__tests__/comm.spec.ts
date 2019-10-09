@@ -1,14 +1,15 @@
 import { of, Subject } from "rxjs";
 import { toArray } from "rxjs/operators";
 
-import {
-  createCommMessage,
-  createCommCloseMessage,
-  createCommOpenMessage,
-  commActionObservable
-} from "../src/comm";
 import * as actions from "@nteract/actions";
-import { COMM_OPEN, COMM_MESSAGE } from "@nteract/actions";
+import { COMM_MESSAGE, COMM_OPEN } from "@nteract/actions";
+import { ActionsObservable } from "redux-observable";
+import {
+  commListenEpic,
+  createCommCloseMessage,
+  createCommMessage,
+  createCommOpenMessage
+} from "../src/comm";
 
 describe("createCommMessage", () => {
   test("creates a comm_msg", () => {
@@ -90,18 +91,20 @@ describe("commActionObservable", () => {
       buffers: new Uint8Array([])
     };
 
-    const action = actions.launchKernelSuccessful({
-      kernel: {
-        channels: of(commOpenMessage, commMessage) as Subject<any>,
-        cwd: "/home/tester",
-        type: "websocket"
-      },
-      kernelRef: "fakeKernelRef",
-      contentRef: "fakeContentRef",
-      selectNextKernel: false
-    });
+    const action = ActionsObservable.of(
+      actions.launchKernelSuccessful({
+        kernel: {
+          channels: of(commOpenMessage, commMessage) as Subject<any>,
+          cwd: "/home/tester",
+          type: "websocket"
+        },
+        kernelRef: "fakeKernelRef",
+        contentRef: "fakeContentRef",
+        selectNextKernel: false
+      })
+    );
 
-    commActionObservable(action)
+    commListenEpic(action)
       .pipe(toArray())
       .subscribe(
         actions => {
